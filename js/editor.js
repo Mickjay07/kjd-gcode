@@ -356,3 +356,21 @@ export function showPreview(toolpath) {
 export function frameModel() {
   controls.target.set(0, state.shape.height / 2, 0);
 }
+
+// Square PNG snapshot of the current model, used as the .gcode.3mf
+// thumbnail shown on the printer screen.
+export function captureThumbnail(size = 512) {
+  const prev = [handleGroup.visible, ringLineGroup.visible, plateGroup.visible];
+  handleGroup.visible = false;
+  ringLineGroup.visible = false;
+  plateGroup.visible = false;
+  renderer.render(scene, camera);
+  const src = renderer.domElement;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const s = Math.min(src.width, src.height);
+  ctx.drawImage(src, (src.width - s) / 2, (src.height - s) / 2, s, s, 0, 0, size, size);
+  [handleGroup.visible, ringLineGroup.visible, plateGroup.visible] = prev;
+  return c.toDataURL('image/png');
+}

@@ -62,10 +62,10 @@ const CORE_START = PRUSA_START.replace('G28 W\nG80', 'G28');
 const CORE_END = PRUSA_END;
 
 export const PRINTERS = {
-  bambu_a1:      { label: 'Bambu A1',          volume: [256, 256, 256], start: BAMBU_START, end: BAMBU_END,  family: 'bambu', originCenter: false },
-  bambu_a1_mini: { label: 'Bambu A1 mini',     volume: [180, 180, 180], start: BAMBU_START, end: BAMBU_END.replace('Y245', 'Y170'), family: 'bambu', originCenter: false },
-  bambu_p1s:     { label: 'Bambu P1S',         volume: [256, 256, 256], start: BAMBU_START, end: BAMBU_END,  family: 'bambu', originCenter: false },
-  bambu_h2s:     { label: 'Bambu H2S',         volume: [325, 320, 325], start: BAMBU_START, end: BAMBU_END.replace('Y245', 'Y310'), family: 'bambu', originCenter: false },
+  bambu_a1:      { label: 'Bambu A1',          volume: [256, 256, 256], start: BAMBU_START, end: BAMBU_END,  family: 'bambu', originCenter: false, modelId: 'N2S' },
+  bambu_a1_mini: { label: 'Bambu A1 mini',     volume: [180, 180, 180], start: BAMBU_START, end: BAMBU_END.replace('Y245', 'Y170'), family: 'bambu', originCenter: false, modelId: 'N1' },
+  bambu_p1s:     { label: 'Bambu P1S',         volume: [256, 256, 256], start: BAMBU_START, end: BAMBU_END,  family: 'bambu', originCenter: false, modelId: 'C12' },
+  bambu_h2s:     { label: 'Bambu H2S',         volume: [325, 320, 325], start: BAMBU_START, end: BAMBU_END.replace('Y245', 'Y310'), family: 'bambu', originCenter: false, modelId: 'O1D' },
   prusa_mk3s:    { label: 'Prusa MK3S',        volume: [250, 210, 210], start: PRUSA_START, end: PRUSA_END,  family: 'prusa', originCenter: false },
   prusa_mk4:     { label: 'Prusa MK4',         volume: [250, 210, 220], start: PRUSA_START, end: PRUSA_END,  family: 'prusa', originCenter: false },
   core_one:      { label: 'Prusa CORE One',    volume: [250, 220, 270], start: CORE_START,  end: CORE_END,   family: 'prusa', originCenter: false },

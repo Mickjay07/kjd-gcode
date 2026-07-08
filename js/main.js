@@ -4,7 +4,8 @@ import { state, on, emit, applyShapePreset, setRingCount } from './state.js';
 import { PATTERNS, PATTERN_ICONS } from './patterns.js';
 import { PRINTERS, NOZZLES } from './printers.js';
 import { generateGcode, formatTime, APP_VERSION } from './gcode.js';
-import { initEditor, setHandlesVisible, showPreview, frameModel } from './editor.js';
+import { buildGcode3mf } from './threemf.js';
+import { initEditor, setHandlesVisible, showPreview, frameModel, captureThumbnail } from './editor.js';
 
 const $ = id => document.getElementById(id);
 
@@ -173,6 +174,8 @@ function selectPrinter(key) {
   $('out-volume').textContent = def.volume.join(' × ') + ' mm';
   $('printer-note').hidden = def.family !== 'bambu';
   $('custom-code').hidden = key !== 'custom';
+  $('btn-export-3mf').hidden = def.family !== 'bambu';
+  $('threemf-note').hidden = def.family !== 'bambu';
   emit('printer');
 }
 selectPrinter(state.printer.model);
@@ -284,16 +287,46 @@ on('texture', scheduleStats);
 on('printer', scheduleStats);
 on('style', scheduleStats);
 
-$('btn-export').addEventListener('click', () => {
-  const { gcode, stats } = generateGcode(state);
-  refreshStats();
-  const name = ($('in-filename').value.trim() || 'kjd-vase').replace(/[^\w.-]+/g, '_');
-  const blob = new Blob([gcode], { type: 'text/plain' });
+function downloadBlob(blob, filename) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = `${name}.gcode`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+function exportName() {
+  return ($('in-filename').value.trim() || 'kjd-vase').replace(/[^\w.-]+/g, '_');
+}
+
+$('btn-export').addEventListener('click', () => {
+  const { gcode } = generateGcode(state);
+  refreshStats();
+  downloadBlob(new Blob([gcode], { type: 'text/plain' }), `${exportName()}.gcode`);
+});
+
+$('btn-export-3mf').addEventListener('click', () => {
+  const { gcode, stats } = generateGcode(state);
+  refreshStats();
+  const preset = PRINTERS[state.printer.model];
+  // thumbnail from the live viewport → shown on the printer screen
+  let thumbnailPng = null;
+  try {
+    const dataUrl = captureThumbnail(512);
+    const b64 = dataUrl.split(',')[1];
+    thumbnailPng = Uint8Array.from(atob(b64), ch => ch.charCodeAt(0));
+  } catch { /* thumbnail is optional */ }
+  const bytes = buildGcode3mf(gcode, {
+    printerModelId: preset.modelId ?? 'N2S',
+    printerName: preset.label,
+    nozzle: state.printer.nozzle,
+    material: state.printer.material,
+    prediction: stats.timeS,
+    weightG: stats.filamentG,
+    usedM: stats.filamentMm,
+    thumbnailPng,
+  });
+  downloadBlob(new Blob([bytes], { type: 'application/zip' }), `${exportName()}.gcode.3mf`);
 });
