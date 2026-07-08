@@ -38,6 +38,7 @@ export function buildMeshWallPath(shape, texture, style, zStart, segsPerLoop = 1
   const totalSteps = Math.ceil(revs * segs);
   const pts = new Float32Array((segs + totalSteps + Math.ceil(segs * 1.5) + 2) * 3);
   let p = 0;
+  const layerMarks = []; // { idx: point index, z } — one per mesh revolution
   const push = (th, z) => {
     const r = radiusAt(shape, texture, th, Math.min(z, top));
     pts[p++] = Math.cos(th) * r;
@@ -46,26 +47,36 @@ export function buildMeshWallPath(shape, texture, style, zStart, segsPerLoop = 1
   };
 
   // anchor: one flat revolution on top of the solid base
+  layerMarks.push({ idx: 0, z: zStart });
   for (let s = 0; s <= segs; s++) push((s / segs) * TAU, zStart);
 
   // mesh spiral
   let lastTh = 0;
+  let lastBand = -1;
   for (let s = 1; s <= totalSteps; s++) {
     const thTotal = (s / segs) * TAU;
     const base = zStart + pitch * (thTotal / TAU);
     let z = base + amp * Math.sin(f * thTotal);
     z = Math.max(zStart, Math.min(top, z));
     if (base - amp > top) break;
+    const band = Math.floor((base - zStart) / pitch + 1e-6);
+    if (band > lastBand) {
+      layerMarks.push({ idx: p / 3, z: Math.min(top, zStart + (band + 1) * pitch) });
+      lastBand = band;
+    }
     push(thTotal % TAU, z);
     lastTh = thTotal % TAU;
   }
 
   // rim: 1.5 flat revolutions riding on the final peaks
+  layerMarks.push({ idx: p / 3, z: top });
   const rimSteps = Math.ceil(segs * 1.5);
   for (let s = 1; s <= rimSteps; s++) {
     push((lastTh + (s / segs) * TAU) % TAU, top);
   }
-  return pts.subarray(0, p);
+  const out = pts.subarray(0, p);
+  out.layerMarks = layerMarks;
+  return out;
 }
 
 function fmt(n, d = 2) {
@@ -120,6 +131,25 @@ export function generateGcode(state) {
 
   const push = s => lines.push(s);
 
+  // slicer-style layer markers so Bambu Studio / PrusaSlicer viewers can
+  // split the file into layers instead of choking on one giant move list
+  function layerMark(n, z, h) {
+    push(';LAYER_CHANGE');
+    push(`;Z:${fmt(z, 3)}`);
+    push(`;HEIGHT:${fmt(h, 3)}`);
+    push(`;LAYER:${n}`);
+  }
+
+  // M73 progress placeholders, resolved once total time is known
+  const PROGRESS = '\u0001';
+  let lastProgressAt = 0;
+  function progressMark(force = false) {
+    if (force || timeS - lastProgressAt >= 20) {
+      lines.push(PROGRESS + timeS.toFixed(1));
+      lastProgressAt = timeS;
+    }
+  }
+
   function travel(x, y, z, speed = travelSpeed) {
     push(`G0 X${fmt(x)} Y${fmt(y)} Z${fmt(z, 3)} F${Math.round(speed * 60)}`);
     timeS += Math.hypot(x - lastX, y - lastY, z - lastZ) / speed;
@@ -132,6 +162,7 @@ export function generateGcode(state) {
     push(`G1 X${fmt(x)} Y${fmt(y)} Z${fmt(z, 3)} E${E.toFixed(5)} F${Math.round(speed * 60)}`);
     timeS += d / speed;
     lastX = x; lastY = y; lastZ = z;
+    progressMark();
   }
 
   // Sample a closed loop of the vase contour at height zSample (mm),
@@ -181,11 +212,12 @@ export function generateGcode(state) {
   push('G92 E0');
   push('M106 S0 ; fan off for first layer');
   timeS += 150; // homing + heating estimate
+  progressMark(true);
 
   // ---------- brim ----------
   const z0 = lh;
+  layerMark(0, z0, lh);
   if (printer.brimLoops > 0) {
-    push(`;LAYER:0`);
     push(`;TYPE:Brim`);
     for (let b = printer.brimLoops; b >= 1; b--) {
       printLoop(0, b * lw * 0.98, z0, firstSpeed, 'brim');
@@ -195,12 +227,12 @@ export function generateGcode(state) {
   // ---------- bottom: solid fill or lamp mount ----------
   for (let j = 1; j <= printer.bottomLayers; j++) {
     const zPrint = j * lh;
-    if (j > 1 || printer.brimLoops === 0) push(`;LAYER:${j - 1}`);
+    if (j > 1) layerMark(j - 1, zPrint, lh);
     if (j === 2) push(`M106 S${temps.fanPWM}`);
     const speed = j === 1 ? firstSpeed : solidSpeed;
 
     if (style.bottom === 'lamp') {
-      push(`;TYPE:Lamp-mount`);
+      push(`;TYPE:Bottom surface`); // lamp mount ring + spokes
       // outer rim: two perimeter loops
       printLoop(zPrint, 0, zPrint, speed, 'bottom');
       printLoop(zPrint, -lw * 0.95, zPrint, speed, 'bottom');
@@ -238,7 +270,7 @@ export function generateGcode(state) {
         toolpath.push({ type: 'mount', points: tp });
       }
     } else {
-      push(`;TYPE:Bottom`);
+      push(`;TYPE:Bottom surface`);
       // concentric fill: perimeter inwards to the centre
       const rc = radiusAt(shape, texture, 0, zPrint);
       const nLoops = Math.max(1, Math.floor(rc / (lw * 0.95)));
@@ -254,29 +286,37 @@ export function generateGcode(state) {
   const zStart = printer.bottomLayers * lh;
   const spiralHeight = shape.height - zStart;
   if (style.wall === 'mesh' && spiralHeight > 0) {
-    push(`;TYPE:Wall-mesh`);
     push('M106 S255 ; full fan for free-hanging mesh strands');
     // free-hanging strand ≈ round bead of nozzle diameter
     const strandE = (Math.PI * (printer.nozzle / 2) ** 2) / FILAMENT_AREA;
     const meshSpeed = Math.min(16, wallSpeed);
     const pts = buildMeshWallPath(shape, texture, style, zStart);
+    const marks = pts.layerMarks ?? [];
     if (pts.length >= 3) {
       travel(cx + pts[0], cy + pts[1], pts[2]);
       const tp = [pts[0], pts[2], pts[1]];
+      const pitch = Math.max(1.2, style.meshPitch);
+      let mi = 0;
       for (let i = 3; i < pts.length; i += 3) {
+        while (mi < marks.length && marks[mi].idx <= i / 3) {
+          layerMark(layer + mi, marks[mi].z, pitch);
+          if (mi === 0) push(`;TYPE:Outer wall`); // open mesh
+          mi++;
+        }
         const x = cx + pts[i], y = cy + pts[i + 1], z = pts[i + 2];
         const d = Math.hypot(x - lastX, y - lastY, z - lastZ);
         E += d * strandE;
         push(`G1 X${fmt(x)} Y${fmt(y)} Z${fmt(z, 3)} E${E.toFixed(5)} F${Math.round(meshSpeed * 60)}`);
         timeS += d / meshSpeed;
         lastX = x; lastY = y; lastZ = z;
+        progressMark();
         tp.push(pts[i], z, pts[i + 1]);
       }
       toolpath.push({ type: 'mesh', points: tp });
-      layer += Math.ceil(spiralHeight / Math.max(1.2, style.meshPitch));
+      layer += marks.length;
     }
   } else if (spiralHeight > 0) {
-    push(`;TYPE:Wall-spiral`);
+    push(`;TYPE:Outer wall`); // spiral vase wall
     const revs = spiralHeight / lh;
     const segs = segsFor(rMax);
     const totalSteps = Math.ceil(revs * segs);
@@ -294,7 +334,7 @@ export function generateGcode(state) {
       const r = radiusAt(shape, texture, th, zSample);
       const lm = Math.floor((z - zStart) / lh);
       if (lm !== lastLayerMark) {
-        push(`;LAYER:${layer + lm}`);
+        layerMark(layer + lm, zStart + (lm + 1) * lh, lh);
         lastLayerMark = lm;
       }
       extrude(cx + Math.cos(th) * r, cy + Math.sin(th) * r, z, wallSpeed);
@@ -305,10 +345,23 @@ export function generateGcode(state) {
   }
 
   // ---------- end ----------
+  push('M73 P100 R0');
   const endCode = (printer.model === 'custom' && printer.customEnd.trim())
     ? printer.customEnd : preset.end;
   push(endCode);
   push('; end of print');
+  push(`; estimated printing time (normal mode) = ${formatTime(timeS)}`);
+  push(`; total filament used [g] = ${(E * FILAMENT_AREA / 1000 * (DENSITY[printer.material] ?? 1.24)).toFixed(2)}`);
+
+  // resolve M73 progress placeholders now that total time is known
+  const totalTime = timeS;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].charCodeAt(0) === 1) {
+      const t = parseFloat(lines[i].slice(1));
+      const pct = Math.min(99, Math.max(0, Math.round((t / totalTime) * 100)));
+      lines[i] = `M73 P${pct} R${Math.max(0, Math.round((totalTime - t) / 60))}`;
+    }
+  }
 
   const gcode = lines.join('\n') + '\n';
   const filamentMm = E;
