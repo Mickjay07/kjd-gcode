@@ -20,6 +20,13 @@ python3 -m http.server 8000
 - **Surface textures** — Smooth, Sine, Ripple, N-Wave, V-Wave, Bubbles,
   Pixels, Triangle, with Amplitude / Frequency / V-Frequency / Twist /
   Pattern offset / Fade-in sliders.
+- **Mesh / Net walls** — open lattice walls printed as free-hanging
+  zigzag strands (antiphase passes fuse at contact points, leaving
+  diamond openings). Adjustable opening size and loop density — for
+  baskets and lampshades.
+- **Lamp mount base** — replaces the solid bottom with a socket ring
+  (E27 / E14 / custom hole diameter) connected to the wall by 3–8
+  spokes, so a shade slips straight onto a bulb holder.
 - **Printer presets** — Bambu A1, A1 mini, P1S, H2S, Prusa MK3S, MK4,
   CORE One, CORE One L, or fully custom start/end G-code. PLA & PETG
   profiles, 0.4 / 0.8 / 1.4 mm nozzles, layer height, line width, bottom

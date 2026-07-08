@@ -40,6 +40,15 @@ export const state = {
     offset: 0,            // degrees
     fadeIn: 8,            // mm from bottom without texture
   },
+  style: {
+    wall: 'solid',        // 'solid' | 'mesh'
+    meshPitch: 4,         // mm between mesh passes (opening height)
+    meshDensity: 16,      // zigzag loops per revolution (effective n + 0.5)
+    bottom: 'solid',      // 'solid' | 'lamp'
+    socket: 'E27',        // 'E27' | 'E14' | 'custom'
+    socketDia: 40,        // hole diameter in mm
+    spokes: 4,            // arms connecting socket ring to the wall
+  },
   printer: {
     model: 'bambu_a1',
     material: 'PLA',
