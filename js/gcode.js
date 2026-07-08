@@ -7,7 +7,7 @@ import { radiusAt, maxRadius } from './vase.js';
 import { PRINTERS, MATERIALS, resolveTemps } from './printers.js';
 import { TAU } from './state.js';
 
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 
 const FILAMENT_AREA = Math.PI * (1.75 / 2) ** 2; // mm^2
 const DENSITY = { PLA: 1.24, PETG: 1.27 };       // g/cm^3
@@ -28,7 +28,7 @@ export function socketHoleDia(style) {
  * diamond openings of ~pitch height in between.
  * Returns a flat [x, y, z, ...] array in local coords (bed centre = 0,0).
  */
-export function buildMeshWallPath(shape, texture, style, zStart, segsPerLoop = 14) {
+export function buildMeshWallPath(shape, texture, style, zStart, segsPerLoop = 10) {
   const pitch = Math.max(1.2, style.meshPitch);
   const f = Math.max(2, Math.round(style.meshDensity)) + 0.5; // loops per rev
   const amp = pitch / 2;
