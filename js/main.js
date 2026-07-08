@@ -67,6 +67,52 @@ $('btn-reset-shape').addEventListener('click', () => {
   emit('ringsChanged');
 });
 
+// ---------- wall & base style ----------
+document.querySelectorAll('.wallopt').forEach(btn =>
+  btn.addEventListener('click', () => {
+    state.style.wall = btn.dataset.wall;
+    document.querySelectorAll('.wallopt').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    $('mesh-controls').hidden = state.style.wall !== 'mesh';
+    emit('style');
+  }));
+
+bindSlider('in-meshpitch', 'out-meshpitch',
+  () => state.style.meshPitch,
+  v => { state.style.meshPitch = v; emit('style'); },
+  v => `${v.toFixed(1)} mm`);
+bindSlider('in-meshdensity', 'out-meshdensity',
+  () => state.style.meshDensity,
+  v => { state.style.meshDensity = v; emit('style'); },
+  v => `${v}`);
+
+document.querySelectorAll('.baseopt').forEach(btn =>
+  btn.addEventListener('click', () => {
+    state.style.bottom = btn.dataset.base;
+    document.querySelectorAll('.baseopt').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    $('lamp-controls').hidden = state.style.bottom !== 'lamp';
+    emit('style');
+  }));
+
+document.querySelectorAll('.sockopt').forEach(btn =>
+  btn.addEventListener('click', () => {
+    state.style.socket = btn.dataset.sock;
+    document.querySelectorAll('.sockopt').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    $('sock-dia-row').hidden = state.style.socket !== 'custom';
+    emit('style');
+  }));
+
+bindSlider('in-sockdia', 'out-sockdia',
+  () => state.style.socketDia,
+  v => { state.style.socketDia = v; emit('style'); },
+  v => `${v} mm`);
+bindSlider('in-spokes', 'out-spokes',
+  () => state.style.spokes,
+  v => { state.style.spokes = v; emit('style'); },
+  v => `${v}`);
+
 // ---------- texture panel ----------
 const patternGrid = $('pattern-grid');
 for (const [key, def] of Object.entries(PATTERNS)) {
@@ -210,6 +256,7 @@ function schedulePreviewRefresh() {
 on('shape', schedulePreviewRefresh);
 on('texture', schedulePreviewRefresh);
 on('printer', schedulePreviewRefresh);
+on('style', schedulePreviewRefresh);
 
 // ---------- export ----------
 function refreshStats() {
@@ -234,6 +281,7 @@ function scheduleStats() {
 on('shape', scheduleStats);
 on('texture', scheduleStats);
 on('printer', scheduleStats);
+on('style', scheduleStats);
 
 $('btn-export').addEventListener('click', () => {
   const { gcode, stats } = generateGcode(state);

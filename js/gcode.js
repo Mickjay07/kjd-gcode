@@ -11,6 +11,63 @@ const FILAMENT_AREA = Math.PI * (1.75 / 2) ** 2; // mm^2
 const DENSITY = { PLA: 1.24, PETG: 1.27 };       // g/cm^3
 const MAX_FLOW = { PLA: 12, PETG: 9 };           // mm^3/s volumetric limit
 
+export const SOCKETS = { E27: 40, E14: 29.5 };   // shade fitter hole diameters (mm)
+const LAMP_RING_WIDTH = 5;                       // radial width of the socket ring
+
+export function socketHoleDia(style) {
+  return style.socket === 'custom' ? style.socketDia : SOCKETS[style.socket];
+}
+
+/**
+ * Open-mesh wall path (baskets / lampshades): the extrusion oscillates
+ * vertically while spiralling up. Loop frequency is forced to n + 0.5
+ * per revolution so consecutive passes are in antiphase — peaks of one
+ * pass meet valleys of the next, fusing at contact points and leaving
+ * diamond openings of ~pitch height in between.
+ * Returns a flat [x, y, z, ...] array in local coords (bed centre = 0,0).
+ */
+export function buildMeshWallPath(shape, texture, style, zStart, segsPerLoop = 14) {
+  const pitch = Math.max(1.2, style.meshPitch);
+  const f = Math.max(2, Math.round(style.meshDensity)) + 0.5; // loops per rev
+  const amp = pitch / 2;
+  const top = shape.height;
+  if (top - zStart < pitch) return new Float32Array(0);
+
+  const segs = Math.max(160, Math.ceil(f * segsPerLoop));
+  const revs = (top - zStart - amp) / pitch + 1;
+  const totalSteps = Math.ceil(revs * segs);
+  const pts = new Float32Array((segs + totalSteps + Math.ceil(segs * 1.5) + 2) * 3);
+  let p = 0;
+  const push = (th, z) => {
+    const r = radiusAt(shape, texture, th, Math.min(z, top));
+    pts[p++] = Math.cos(th) * r;
+    pts[p++] = Math.sin(th) * r;
+    pts[p++] = z;
+  };
+
+  // anchor: one flat revolution on top of the solid base
+  for (let s = 0; s <= segs; s++) push((s / segs) * TAU, zStart);
+
+  // mesh spiral
+  let lastTh = 0;
+  for (let s = 1; s <= totalSteps; s++) {
+    const thTotal = (s / segs) * TAU;
+    const base = zStart + pitch * (thTotal / TAU);
+    let z = base + amp * Math.sin(f * thTotal);
+    z = Math.max(zStart, Math.min(top, z));
+    if (base - amp > top) break;
+    push(thTotal % TAU, z);
+    lastTh = thTotal % TAU;
+  }
+
+  // rim: 1.5 flat revolutions riding on the final peaks
+  const rimSteps = Math.ceil(segs * 1.5);
+  for (let s = 1; s <= rimSteps; s++) {
+    push((lastTh + (s / segs) * TAU) % TAU, top);
+  }
+  return pts.subarray(0, p);
+}
+
 function fmt(n, d = 2) {
   let s = n.toFixed(d);
   if (s.includes('.')) s = s.replace(/\.?0+$/, '');
@@ -19,6 +76,7 @@ function fmt(n, d = 2) {
 
 export function generateGcode(state) {
   const { shape, texture, printer } = state;
+  const style = state.style ?? { wall: 'solid', bottom: 'solid' };
   const preset = PRINTERS[printer.model];
   const mat = MATERIALS[printer.material];
   const temps = resolveTemps(printer.model, printer.material);
@@ -43,6 +101,16 @@ export function generateGcode(state) {
   }
   if (shape.height > bedZ) {
     warnings.push(`Height ${fmt(shape.height, 0)} mm exceeds the ${bedZ} mm build volume.`);
+  }
+  if (style.bottom === 'lamp') {
+    const rNeeded = socketHoleDia(style) / 2 + LAMP_RING_WIDTH + 4;
+    let rBase = Infinity;
+    for (let i = 0; i < 32; i++) {
+      rBase = Math.min(rBase, radiusAt(shape, texture, (i / 32) * TAU, 0));
+    }
+    if (rNeeded > rBase) {
+      warnings.push(`Socket ring (needs Ø${fmt(rNeeded * 2, 0)} mm) doesn't fit the Ø${fmt(rBase * 2, 0)} mm base opening.`);
+    }
   }
 
   const lines = [];
@@ -124,28 +192,91 @@ export function generateGcode(state) {
     }
   }
 
-  // ---------- solid bottom ----------
+  // ---------- bottom: solid fill or lamp mount ----------
   for (let j = 1; j <= printer.bottomLayers; j++) {
     const zPrint = j * lh;
     if (j > 1 || printer.brimLoops === 0) push(`;LAYER:${j - 1}`);
-    push(`;TYPE:Bottom`);
     if (j === 2) push(`M106 S${temps.fanPWM}`);
     const speed = j === 1 ? firstSpeed : solidSpeed;
-    // concentric fill: perimeter inwards to the centre
-    const rc = radiusAt(shape, texture, 0, zPrint);
-    const nLoops = Math.max(1, Math.floor(rc / (lw * 0.95)));
-    for (let i = 0; i < nLoops; i++) {
-      printLoop(zPrint, -i * lw * 0.95, zPrint, speed, 'bottom');
+
+    if (style.bottom === 'lamp') {
+      push(`;TYPE:Lamp-mount`);
+      // outer rim: two perimeter loops
+      printLoop(zPrint, 0, zPrint, speed, 'bottom');
+      printLoop(zPrint, -lw * 0.95, zPrint, speed, 'bottom');
+      // socket ring around the bulb-holder hole
+      const rHole = socketHoleDia(style) / 2;
+      const ringLoops = Math.max(2, Math.round(LAMP_RING_WIDTH / (lw * 0.95)));
+      for (let i = 0; i < ringLoops; i++) {
+        const r = rHole + lw / 2 + i * lw * 0.95;
+        const segs = Math.max(64, Math.ceil((TAU * r) / 0.8));
+        travel(cx + r, cy, zPrint);
+        const tp = [];
+        for (let s = 1; s <= segs; s++) {
+          const th = (s / segs) * TAU;
+          extrude(cx + Math.cos(th) * r, cy + Math.sin(th) * r, zPrint, speed);
+          tp.push(lastX - cx, zPrint, lastY - cy);
+        }
+        toolpath.push({ type: 'mount', points: tp });
+      }
+      // spokes: double-pass arms from the ring to the outer wall
+      const rRing = rHole + LAMP_RING_WIDTH;
+      const nSpokes = Math.max(3, Math.round(style.spokes ?? 4));
+      for (let k = 0; k < nSpokes; k++) {
+        const a = (k / nSpokes) * TAU + (j % 2 ? 0 : TAU / (nSpokes * 2));
+        const rOut = radiusAt(shape, texture, a, zPrint) - lw;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const px = -sa * lw * 0.9, py = ca * lw * 0.9; // perpendicular offset
+        travel(cx + ca * (rRing - 1), cy + sa * (rRing - 1), zPrint);
+        const tp = [lastX - cx, zPrint, lastY - cy];
+        extrude(cx + ca * rOut, cy + sa * rOut, zPrint, speed);
+        tp.push(lastX - cx, zPrint, lastY - cy);
+        extrude(cx + ca * rOut + px, cy + sa * rOut + py, zPrint, speed);
+        tp.push(lastX - cx, zPrint, lastY - cy);
+        extrude(cx + ca * (rRing - 1) + px, cy + sa * (rRing - 1) + py, zPrint, speed);
+        tp.push(lastX - cx, zPrint, lastY - cy);
+        toolpath.push({ type: 'mount', points: tp });
+      }
+    } else {
+      push(`;TYPE:Bottom`);
+      // concentric fill: perimeter inwards to the centre
+      const rc = radiusAt(shape, texture, 0, zPrint);
+      const nLoops = Math.max(1, Math.floor(rc / (lw * 0.95)));
+      for (let i = 0; i < nLoops; i++) {
+        printLoop(zPrint, -i * lw * 0.95, zPrint, speed, 'bottom');
+      }
     }
   }
 
-  // ---------- spiral wall ----------
+  // ---------- wall: spiral (solid) or open mesh ----------
   if (printer.bottomLayers < 2) push(`M106 S${temps.fanPWM}`);
-  push(`;TYPE:Wall-spiral`);
   let layer = printer.bottomLayers;
   const zStart = printer.bottomLayers * lh;
   const spiralHeight = shape.height - zStart;
-  if (spiralHeight > 0) {
+  if (style.wall === 'mesh' && spiralHeight > 0) {
+    push(`;TYPE:Wall-mesh`);
+    push('M106 S255 ; full fan for free-hanging mesh strands');
+    // free-hanging strand ≈ round bead of nozzle diameter
+    const strandE = (Math.PI * (printer.nozzle / 2) ** 2) / FILAMENT_AREA;
+    const meshSpeed = Math.min(16, wallSpeed);
+    const pts = buildMeshWallPath(shape, texture, style, zStart);
+    if (pts.length >= 3) {
+      travel(cx + pts[0], cy + pts[1], pts[2]);
+      const tp = [pts[0], pts[2], pts[1]];
+      for (let i = 3; i < pts.length; i += 3) {
+        const x = cx + pts[i], y = cy + pts[i + 1], z = pts[i + 2];
+        const d = Math.hypot(x - lastX, y - lastY, z - lastZ);
+        E += d * strandE;
+        push(`G1 X${fmt(x)} Y${fmt(y)} Z${fmt(z, 3)} E${E.toFixed(5)} F${Math.round(meshSpeed * 60)}`);
+        timeS += d / meshSpeed;
+        lastX = x; lastY = y; lastZ = z;
+        tp.push(pts[i], z, pts[i + 1]);
+      }
+      toolpath.push({ type: 'mesh', points: tp });
+      layer += Math.ceil(spiralHeight / Math.max(1.2, style.meshPitch));
+    }
+  } else if (spiralHeight > 0) {
+    push(`;TYPE:Wall-spiral`);
     const revs = spiralHeight / lh;
     const segs = segsFor(rMax);
     const totalSteps = Math.ceil(revs * segs);

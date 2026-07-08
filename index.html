@@ -60,6 +60,46 @@
       <button class="opt" data-preset="cylinder">Cylinder</button>
       <button class="opt" data-preset="wobble">Wobble</button>
     </div>
+
+    <h3>Wall</h3>
+    <div class="btn-grid two">
+      <button class="opt wallopt active" data-wall="solid">Solid</button>
+      <button class="opt wallopt" data-wall="mesh">Mesh / Net</button>
+    </div>
+    <div id="mesh-controls" hidden>
+      <div class="slider-row">
+        <label>Opening size <output id="out-meshpitch">4.0 mm</output></label>
+        <input type="range" id="in-meshpitch" min="2" max="10" step="0.5" value="4">
+      </div>
+      <div class="slider-row">
+        <label>Loops per turn <output id="out-meshdensity">16</output></label>
+        <input type="range" id="in-meshdensity" min="4" max="40" step="1" value="16">
+      </div>
+      <div class="note">Mesh walls print as free-hanging strands — slow &amp;
+      with full cooling. Great for baskets and lampshades; watch the first
+      mesh rows of the print.</div>
+    </div>
+
+    <h3>Base</h3>
+    <div class="btn-grid two">
+      <button class="opt baseopt active" data-base="solid">Solid</button>
+      <button class="opt baseopt" data-base="lamp">Lamp mount</button>
+    </div>
+    <div id="lamp-controls" hidden>
+      <div class="btn-grid three" style="margin-top:8px">
+        <button class="opt sockopt active" data-sock="E27">E27</button>
+        <button class="opt sockopt" data-sock="E14">E14</button>
+        <button class="opt sockopt" data-sock="custom">Custom</button>
+      </div>
+      <div class="slider-row" id="sock-dia-row" hidden>
+        <label>Hole diameter <output id="out-sockdia">40 mm</output></label>
+        <input type="range" id="in-sockdia" min="20" max="60" step="0.5" value="40">
+      </div>
+      <div class="slider-row">
+        <label>Spokes <output id="out-spokes">4</output></label>
+        <input type="range" id="in-spokes" min="3" max="8" step="1" value="4">
+      </div>
+    </div>
   </section>
 
   <section id="panel-texture" class="panel">
