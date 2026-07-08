@@ -205,6 +205,8 @@ label.mini { font-size: 0.7rem; color: var(--fg-dim); display: block; margin-bot
 }
 .cta:active { transform: translateY(1px); }
 
+.version { text-align: center; font-size: 0.65rem; color: var(--fg-dim); margin-top: 12px; opacity: 0.7; }
+
 /* ---------- tab bar ---------- */
 #tabbar {
   position: absolute; left: 0; right: 0; bottom: 0;

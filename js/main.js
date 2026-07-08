@@ -3,12 +3,13 @@
 import { state, on, emit, applyShapePreset, setRingCount } from './state.js';
 import { PATTERNS, PATTERN_ICONS } from './patterns.js';
 import { PRINTERS, NOZZLES } from './printers.js';
-import { generateGcode, formatTime } from './gcode.js';
+import { generateGcode, formatTime, APP_VERSION } from './gcode.js';
 import { initEditor, setHandlesVisible, showPreview, frameModel } from './editor.js';
 
 const $ = id => document.getElementById(id);
 
 initEditor($('viewport'));
+$('app-version').textContent = `KJD GCODE v${APP_VERSION}`;
 
 // ---------- tabs & panels ----------
 const tabs = [...document.querySelectorAll('#tabbar .tab')];
