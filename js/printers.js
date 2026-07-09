@@ -8,6 +8,7 @@ M140 S{bed_temp}
 M104 S{nozzle_temp}
 G28
 M190 S{bed_temp}
+G29 ; auto bed leveling
 M109 S{nozzle_temp}
 G92 E0
 ; purge line
